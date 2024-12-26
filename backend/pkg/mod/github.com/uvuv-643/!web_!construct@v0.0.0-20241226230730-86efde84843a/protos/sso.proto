@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package sso;
+
+option go_package = "./pkg/sso";
+
+service Auth {
+  rpc Register (RegisterRequest) returns (RegisterResponse);
+  rpc Login (LoginRequest) returns (LoginResponse);
+}
+
+service Permissions {
+  rpc GetUserPermissions (GetUserPermissionsRequest) returns (UserPermissions);
+}
+
+message RegisterRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message RegisterResponse {
+  int64 user_id = 1;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+  string app_uuid = 3;
+}
+
+message LoginResponse {
+  string jwt = 1;
+}
+
+message GetUserPermissionsRequest {
+  string jwt = 1;
+}
+
+message UserPermissions {
+  string user_id = 1;
+  repeated AppPermission apps = 2;
+}
+
+message AppPermission {
+  repeated PermissionType permissions = 1;
+  string app_uuid = 2;
+}
+
+enum PermissionType {
+  PT_UNDEFINED = 0;
+  PT_READ = 1;
+  PT_WRITE = 2;
+  PT_EXECUTE = 3;
+  PT_DELETE = 4;
+  PT_SHARE = 5;
+  PT_MANAGE = 6;
+  PT_DELEGATE = 7;
+  PT_AUDIT = 8;
+}
