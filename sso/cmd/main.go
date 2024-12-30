@@ -55,8 +55,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/go-pg/pg/v10"
 	"github.com/uvuv-643/Web_Construct/sso/internal"
+	"log"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -64,10 +68,10 @@ import (
 
 type Server struct {
 	router   *mux.Router
-	userRepo internal.UserRepository
+	userRepo *internal.UserRepository
 }
 
-func NewServer(userRepo internal.UserRepository) *Server {
+func NewServer(userRepo *internal.UserRepositoryImpl) *Server {
 	s := &Server{
 		router:   mux.NewRouter(),
 		userRepo: userRepo,
@@ -79,7 +83,6 @@ func NewServer(userRepo internal.UserRepository) *Server {
 func (s *Server) routes() {
 	s.router.HandleFunc("/users", s.createUser).Methods("POST")
 	s.router.HandleFunc("/users/{id}", s.getUser).Methods("GET")
-	s.router.HandleFunc("/users/{id}", s.updateUser).Methods("PUT")
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -87,64 +90,66 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
-	var user internal.User
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+	var input struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+		FullName string `json:"full_name"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
+
 	ctx := context.Background()
-	if err := s.userRepo.Create(ctx, &user); err != nil {
-		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+	err := s.userRepo.Create(ctx, Email(strings.ToLower(input.Email)), input.Password, input.FullName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create user: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
+
 	w.WriteHeader(http.StatusCreated)
+	fmt.Fprintln(w, "User created successfully")
 }
 
 func (s *Server) getUser(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id, err := uuid.Parse(vars["id"])
-	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
-	}
-	ctx := context.Background()
-	user, err := s.userRepo.Get(ctx, &internal.FindUserOptions{ID: id})
-	if err != nil {
-		http.Error(w, "User not found", http.StatusNotFound)
-		return
-	}
-	json.NewEncoder(w).Encode(user)
-}
-
-func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id, err := uuid.Parse(vars["id"])
-	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
+	var input struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
-	var user internal.User
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
-	user.ID = id
 
 	ctx := context.Background()
-	if err := s.userRepo.Update(ctx, &user); err != nil {
-		http.Error(w, "Failed to update user", http.StatusInternalServerError)
+	user, err := s.userRepo.GetByEmailAndPassword(ctx, input.Email, input.Password)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to retrieve user: %s", err.Error()), http.StatusUnauthorized)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(user); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 func main() {
 	db := internal.ConnectToDB()
-	defer db.Close()
+	defer func(db *pg.DB) {
+		err := db.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(db)
 
 	userRepo := internal.NewUserRepository(db)
 	server := NewServer(userRepo)
 
-	http.ListenAndServe(":8080", server)
+	err := http.ListenAndServe(":8080", server)
+	if err != nil {
+		return
+	}
+
 }
