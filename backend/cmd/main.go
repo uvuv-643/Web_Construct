@@ -36,12 +36,41 @@ func NewServer() *HttpServer {
 }
 
 func (s *HttpServer) routes() {
-	s.router.HandleFunc("/login", s.createUser).Methods("POST")
-	s.router.HandleFunc("/register", s.getUser).Methods("POST")
+	authRoutes := s.router.PathPrefix("/api/auth").Subrouter()
+	authRoutes.HandleFunc("/register", s.createUser).Methods("POST")
+	authRoutes.HandleFunc("/login", s.getUser).Methods("POST")
+
+	allRoutes := s.router.PathPrefix("/api").Subrouter()
+	allRoutes.Use(s.validateJWT)
+	allRoutes.HandleFunc("/hello", s.hello).Methods("POST")
+
 }
 
 func (s *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.router.ServeHTTP(w, r)
+}
+
+func (s *HttpServer) validateJWT(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		jwtToken := strings.Trim(strings.Replace(authHeader, "Bearer:", "", 1), " ")
+		_, err := internal.GetUserPermissions(jwtToken)
+		if err != nil {
+			st, _ := status.FromError(err)
+			if st.Code() == codes.Unauthenticated {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *HttpServer) hello(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *HttpServer) createUser(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +100,7 @@ func (s *HttpServer) createUser(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "User already exists", http.StatusBadRequest)
 			return
 		} else {
+			fmt.Println(st.Code())
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -110,7 +140,7 @@ func (s *HttpServer) getUser(w http.ResponseWriter, r *http.Request) {
 func (s *server) SendRequest(_ context.Context, in *llmproxy.LLMRequest) (*emptypb.Empty, error) {
 	fmt.Println("Send Request to server", in.Jwt, in.Content)
 	fmt.Println(internal.GetUserPermissions(in.Jwt))
-	fmt.Println(internal.ValidateAIProxyPermissions(internal.GetUserPermissions(in.Jwt)))
+	//fmt.Println(internal.ValidateAIProxyPermissions(internal.GetUserPermissions(in.Jwt)))
 	return nil, nil
 }
 
@@ -140,6 +170,7 @@ func startGrpcServer() {
 
 func startHttpServer() {
 	server := NewServer()
+	log.Printf("server listening at [::]:8080")
 	err := http.ListenAndServe(":8080", server)
 	if err != nil {
 		return
@@ -148,5 +179,5 @@ func startHttpServer() {
 
 func main() {
 	go startGrpcServer()
-	go startHttpServer()
+	startHttpServer()
 }

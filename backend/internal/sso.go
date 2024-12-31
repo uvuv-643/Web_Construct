@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func GetUserPermissions(jwt string) []sso.PermissionType {
+func GetUserPermissions(jwt string) ([]sso.PermissionType, error) {
 
 	cfg := config.New()
 	addr := cfg.SSOUrl
@@ -37,16 +37,16 @@ func GetUserPermissions(jwt string) []sso.PermissionType {
 	defer cancel()
 	r, err := c.GetUserPermissions(ctx, &sso.GetUserPermissionsRequest{Jwt: jwt})
 	if err != nil {
-		log.Fatalf("could not greet: %v", err)
+		return nil, err
 	}
 	permissions := r.GetApps()
 	for _, permission := range permissions {
 		if permission.AppUuid == appUuid {
-			return permission.Permissions
+			return permission.Permissions, nil
 		}
 	}
 
-	return make([]sso.PermissionType, 0)
+	return make([]sso.PermissionType, 0), nil
 }
 
 func Register(email, password string) (*sso.RegisterResponse, error) {
