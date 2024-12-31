@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/go-pg/pg/v10/orm"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/go-pg/pg/v10"
@@ -14,8 +13,9 @@ import (
 )
 
 type UserRepository interface {
-	Create(ctx context.Context, email Email, password, fullName string) error
+	Create(ctx context.Context, email Email, password string) (*User, error)
 	GetByEmailAndPassword(ctx context.Context, email, password string) (*User, error)
+	GetByEmail(ctx context.Context, email string) (*User, error)
 }
 
 type UserRepositoryImpl struct {
@@ -26,51 +26,70 @@ func NewUserRepository(db *pg.DB) *UserRepositoryImpl {
 	return &UserRepositoryImpl{db: db}
 }
 
-func (r *UserRepositoryImpl) Create(ctx context.Context, email Email, password, fullName string) error {
-	if email == "" || password == "" || fullName == "" {
-		return fmt.Errorf("all fields are required")
+func (r *UserRepositoryImpl) Create(ctx context.Context, email Email, password string) (*User, error) {
+
+	existingUser, err := r.GetByEmailAndPassword(ctx, string(email), password)
+	if existingUser != nil {
+		return nil, fmt.Errorf("duplicate_email")
 	}
 
-	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
+		return nil, fmt.Errorf("password_error")
 	}
 
 	user := &User{
 		ID:              uuid.New(),
 		Email:           email,
 		PasswordBCrypto: string(hashedPassword),
-		FullName:        fullName,
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
-		Roles:           []*UserRole{{Role: "PT_READ", CreatedAt: time.Now(), UpdatedAt: time.Now()}},
 	}
 
-	_, err = r.db.ModelContext(ctx, user).Insert()
-	if err != nil {
-		return fmt.Errorf("failed to create user: %w", err)
+	if _, err := r.db.ModelContext(ctx, user).Insert(); err != nil {
+		return nil, fmt.Errorf("database_error")
 	}
-	return nil
+
+	role := &UserRole{
+		ID:        uuid.New(),
+		UserID:    user.ID,
+		Role:      "PT_READ",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if _, err := r.db.ModelContext(ctx, role).Insert(); err != nil {
+		return nil, fmt.Errorf("role_error")
+	}
+
+	return user, nil
 }
 
 func (r *UserRepositoryImpl) GetByEmailAndPassword(ctx context.Context, email, password string) (*User, error) {
-	if email == "" || password == "" {
-		return nil, fmt.Errorf("email and password are required")
-	}
-
 	user := new(User)
 	err := r.db.ModelContext(ctx, user).
-		Where("email = ?", strings.ToLower(email)).
+		Relation("Roles").
+		Where("email = ?", email).
 		Select()
 	if err != nil {
-		return nil, fmt.Errorf("user not found")
+		return nil, fmt.Errorf("failed to find user: %w", err)
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordBCrypto), []byte(password)); err != nil {
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
+	return user, nil
+}
+
+func (r *UserRepositoryImpl) GetByEmail(ctx context.Context, email string) (*User, error) {
+	user := new(User)
+	err := r.db.ModelContext(ctx, user).
+		Relation("Roles").
+		Where("email = ?", email).
+		Select()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find user: %w", err)
+	}
 	return user, nil
 }
 
