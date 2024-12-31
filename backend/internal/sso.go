@@ -49,7 +49,7 @@ func GetUserPermissions(jwt string) []sso.PermissionType {
 	return make([]sso.PermissionType, 0)
 }
 
-func Register(email, password string) *sso.RegisterResponse {
+func Register(email, password string) (*sso.RegisterResponse, error) {
 
 	cfg := config.New()
 	addr := cfg.SSOUrl
@@ -73,15 +73,12 @@ func Register(email, password string) *sso.RegisterResponse {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	response, err := c.Register(ctx, &sso.RegisterRequest{Email: email, Password: password})
-	if err != nil {
-		log.Fatalf("could not greet: %v", err)
-	}
 
-	return response
+	return response, err
 
 }
 
-func Login(email, password string) *sso.LoginResponse {
+func Login(email, password string) (*sso.LoginResponse, error) {
 
 	cfg := config.New()
 	addr := cfg.SSOUrl
@@ -105,10 +102,7 @@ func Login(email, password string) *sso.LoginResponse {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	response, err := c.Login(ctx, &sso.LoginRequest{Email: email, Password: password})
-	if err != nil {
-		log.Fatalf("could not greet: %v", err)
-	}
 
-	return response
+	return response, err
 
 }
