@@ -51,11 +51,12 @@ func (r *UserRepositoryImpl) Create(ctx context.Context, email Email, password s
 	}
 
 	role := &UserRole{
-		ID:        uuid.New(),
-		UserID:    user.ID,
-		Role:      "PT_READ",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:            uuid.New(),
+		UserID:        user.ID,
+		Role:          "PT_READ",
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		ApplicationID: "backend",
 	}
 	if _, err := r.db.ModelContext(ctx, role).Insert(); err != nil {
 		return nil, fmt.Errorf("role_error")

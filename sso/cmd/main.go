@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/go-pg/pg/v10"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/uvuv-643/Web_Construct/common/proto/pkg/sso"
 	"github.com/uvuv-643/Web_Construct/sso/internal"
@@ -32,9 +33,13 @@ func (s *server) createJWTForUser(user *internal.User) (string, error) {
 }
 
 func (s *server) getUserFromJWT(tokenString string) (*internal.User, error) {
+	fmt.Println(tokenString)
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return []byte("AllYourBase"), nil
 	})
+	if err != nil {
+		return nil, err
+	}
 	switch {
 	case token.Valid:
 		email, err := token.Claims.GetSubject()
@@ -50,6 +55,7 @@ func (s *server) getUserFromJWT(tokenString string) (*internal.User, error) {
 
 func (s *server) Register(_ context.Context, in *sso.RegisterRequest) (*sso.RegisterResponse, error) {
 	ctx := context.Background()
+	fmt.Println(in)
 	existingUser, err := s.userRepo.GetByEmailAndPassword(ctx, strings.ToLower(in.Email), in.Password)
 	if existingUser != nil {
 		return nil, status.Errorf(codes.AlreadyExists, "User already exists")
@@ -84,14 +90,19 @@ func (s *server) GetUserPermissions(_ context.Context, in *sso.GetUserPermission
 	for _, role := range user.Roles {
 		if userPermissions[role.ApplicationID] == nil {
 			userPermissions[role.ApplicationID] = make([]sso.PermissionType, 0)
-		} else {
-			userPermissions[role.ApplicationID] = append(userPermissions[role.ApplicationID], internal.GetPermissionType(string(role.Role)))
 		}
+		userPermissions[role.ApplicationID] = append(
+			userPermissions[role.ApplicationID],
+			internal.GetPermissionsType(string(role.Role)),
+		)
 	}
-
-	return &sso.UserPermissions{UserId: "hello", Apps: []*sso.AppPermission{
-		{AppUuid: "backend", Permissions: []sso.PermissionType{sso.PermissionType_PT_SHARE}},
-	}}, nil
+	appPermissions := make([]*sso.AppPermission, 0)
+	for key, permissions := range userPermissions {
+		appPermissions = append(appPermissions, &sso.AppPermission{
+			AppUuid: key, Permissions: permissions,
+		})
+	}
+	return &sso.UserPermissions{UserId: user.ID.String(), Apps: appPermissions}, nil
 }
 
 var (
@@ -105,8 +116,18 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 	s := grpc.NewServer()
-	sso.RegisterAuthServer(s, &server{})
-	sso.RegisterPermissionsServer(s, &server{})
+
+	db := internal.ConnectToDB()
+	defer func(db *pg.DB) {
+		err := db.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(db)
+	userRepo := internal.NewUserRepository(db)
+
+	sso.RegisterAuthServer(s, &server{userRepo: userRepo})
+	sso.RegisterPermissionsServer(s, &server{userRepo: userRepo})
 	log.Printf("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)

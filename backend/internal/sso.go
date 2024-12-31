@@ -48,3 +48,67 @@ func GetUserPermissions(jwt string) []sso.PermissionType {
 
 	return make([]sso.PermissionType, 0)
 }
+
+func Register(email, password string) *sso.RegisterResponse {
+
+	cfg := config.New()
+	addr := cfg.SSOUrl
+
+	flag.Parse()
+
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("did not connect: %v", err)
+	}
+
+	defer func(conn *grpc.ClientConn) {
+		err := conn.Close()
+		if err != nil {
+			log.Fatalf("could not close connection: %v", err)
+		}
+	}(conn)
+
+	c := sso.NewAuthClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	response, err := c.Register(ctx, &sso.RegisterRequest{Email: email, Password: password})
+	if err != nil {
+		log.Fatalf("could not greet: %v", err)
+	}
+
+	return response
+
+}
+
+func Login(email, password string) *sso.LoginResponse {
+
+	cfg := config.New()
+	addr := cfg.SSOUrl
+
+	flag.Parse()
+
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("did not connect: %v", err)
+	}
+
+	defer func(conn *grpc.ClientConn) {
+		err := conn.Close()
+		if err != nil {
+			log.Fatalf("could not close connection: %v", err)
+		}
+	}(conn)
+
+	c := sso.NewAuthClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	response, err := c.Login(ctx, &sso.LoginRequest{Email: email, Password: password})
+	if err != nil {
+		log.Fatalf("could not greet: %v", err)
+	}
+
+	return response
+
+}

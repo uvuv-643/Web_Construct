@@ -2,7 +2,7 @@ package internal
 
 import "github.com/uvuv-643/Web_Construct/common/proto/pkg/sso"
 
-func GetPermissionType(permission string) sso.PermissionType {
+func GetPermissionsType(permission string) sso.PermissionType {
 	if permission == "PT_READ" {
 		return sso.PermissionType_PT_READ
 	} else if permission == "PT_WRITE" {
