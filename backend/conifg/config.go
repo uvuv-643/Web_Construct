@@ -14,7 +14,10 @@ type AuthConfig struct {
 type Config struct {
 	Auth            AuthConfig
 	SSOUrl          string
+	ProxyURL        string
 	ApplicationUUID string
+	ServiceJWT      string
+	BackendGrpcPort int
 }
 
 func New() *Config {
@@ -24,6 +27,9 @@ func New() *Config {
 			Password: getEnv("SSO_PASSWORD", ""),
 		},
 		SSOUrl:          getEnv("SSO_ADDRESS", ""),
+		ProxyURL:        getEnv("PROXY_URL", ""),
+		BackendGrpcPort: getEnvAsInt("BACKEND_GRPC_PORT", 0),
+		ServiceJWT:      getEnv("SERVICE_JWT", ""),
 		ApplicationUUID: getEnv("APPLICATION_UUID", ""),
 	}
 }

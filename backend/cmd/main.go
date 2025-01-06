@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
+	config "github.com/uvuv-643/Web_Construct/backend/conifg"
 	"github.com/uvuv-643/Web_Construct/backend/internal"
 	"github.com/uvuv-643/Web_Construct/common/proto/pkg/llmproxy"
 	"google.golang.org/grpc"
@@ -53,7 +53,7 @@ func (s *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *HttpServer) validateJWT(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
-		jwtToken := strings.Trim(strings.Replace(authHeader, "Bearer:", "", 1), " ")
+		jwtToken := strings.Trim(strings.Replace(authHeader, "Bearer", "", 1), " ")
 		_, err := internal.GetUserPermissions(jwtToken)
 		if err != nil {
 			st, _ := status.FromError(err)
@@ -70,6 +70,7 @@ func (s *HttpServer) validateJWT(next http.Handler) http.Handler {
 }
 
 func (s *HttpServer) hello(w http.ResponseWriter, r *http.Request) {
+	internal.SendRequestToLLM("hello world!")
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -137,16 +138,17 @@ func (s *HttpServer) getUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) SendRequest(_ context.Context, in *llmproxy.LLMRequest) (*emptypb.Empty, error) {
-	fmt.Println("Send Request to server", in.Jwt, in.Content)
+func (s *server) SendReply(_ context.Context, in *llmproxy.LLMReply) (*emptypb.Empty, error) {
+	fmt.Println("Send Request to server", in.Jwt)
 	fmt.Println(internal.GetUserPermissions(in.Jwt))
-	//fmt.Println(internal.ValidateAIProxyPermissions(internal.GetUserPermissions(in.Jwt)))
-	return nil, nil
+	permissions, err := internal.GetUserPermissions(in.Jwt)
+	if err != nil {
+		return &emptypb.Empty{}, status.Errorf(codes.Unauthenticated, "Invalid token")
+	}
+	fmt.Println(internal.ValidateAIProxyPermissions(permissions))
+	fmt.Println(in.Response)
+	return &emptypb.Empty{}, nil
 }
-
-var (
-	port = flag.Int("port", 50051, "The server port")
-)
 
 func init() {
 	if err := godotenv.Load(); err != nil {
@@ -155,8 +157,7 @@ func init() {
 }
 
 func startGrpcServer() {
-	flag.Parse()
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", config.New().BackendGrpcPort))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}

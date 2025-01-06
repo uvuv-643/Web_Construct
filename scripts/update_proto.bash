@@ -9,9 +9,10 @@ SCRIPT_DIR=$(dirname "$(realpath "$0")")
 
 PROTO_DIR="$SCRIPT_DIR/../protos"
 AI_PROXY_DIR="$SCRIPT_DIR/../ai-proxy"
+AI_PROXY_CODEGEN_DIR="$AI_PROXY_DIR/protogen"
 PROTO_CODEGEN_DIR="$SCRIPT_DIR/../common/proto"
 
-mkdir -p "$AI_PROXY_DIR" "$PROTO_CODEGEN_DIR"
+mkdir -p "$AI_PROXY_DIR" "$PROTO_CODEGEN_DIR" "$AI_PROXY_CODEGEN_DIR"
 
 VENV_DIR="$AI_PROXY_DIR/venv"
 if [ ! -d "$VENV_DIR" ]; then
@@ -23,8 +24,8 @@ fi
 source "$VENV_DIR/bin/activate"
 
 pip3 install -r "$AI_PROXY_DIR/requirements.txt"
-python3 -m grpc_tools.protoc -I "$PROTO_DIR" --python_out="$AI_PROXY_DIR"  --grpc_python_out="$AI_PROXY_DIR"  "$PROTO_DIR/llmproxy.proto"
-python3 -m grpc_tools.protoc -I "$PROTO_DIR" --python_out="$AI_PROXY_DIR"  --grpc_python_out="$AI_PROXY_DIR"  "$PROTO_DIR/sso.proto"
+python3 -m grpc_tools.protoc -I "$PROTO_DIR" --python_out="$AI_PROXY_CODEGEN_DIR"  --grpc_python_out="$AI_PROXY_CODEGEN_DIR"  "$PROTO_DIR/llmproxy.proto"
+python3 -m grpc_tools.protoc -I "$PROTO_DIR" --python_out="$AI_PROXY_CODEGEN_DIR"  --grpc_python_out="$AI_PROXY_CODEGEN_DIR"  "$PROTO_DIR/sso.proto"
 
 export GOPATH=$PROTO_CODEGEN_DIR
 export PATH=$PATH:$GOPATH/bin

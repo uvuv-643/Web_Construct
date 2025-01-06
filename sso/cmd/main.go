@@ -40,6 +40,7 @@ func (s *server) getUserFromJWT(tokenString string) (*internal.User, error) {
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("hello")
 	switch {
 	case token.Valid:
 		email, err := token.Claims.GetSubject()
@@ -49,7 +50,7 @@ func (s *server) getUserFromJWT(tokenString string) (*internal.User, error) {
 		ctx := context.Background()
 		return s.userRepo.GetByEmail(ctx, email)
 	default:
-		return nil, err
+		return nil, status.Errorf(codes.Unauthenticated, "Invalid username or password")
 	}
 }
 

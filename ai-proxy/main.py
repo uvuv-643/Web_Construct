@@ -1,22 +1,80 @@
 from __future__ import print_function
 
 import logging
-
+import asyncio
+import os
+import time
 
 import grpc
 
-from protogen import llmproxy_pb2_grpc, llmproxy_pb2
+from dotenv import load_dotenv
+from grpc.aio import AioRpcError
 
+from protogen import llmproxy_pb2_grpc, llmproxy_pb2, sso_pb2, sso_pb2_grpc
+from google.protobuf import empty_pb2
 
-def run():
+load_dotenv()
+
+PROXY_SOCKET = os.environ.get("AIPROXY_GRPC_SOCKET")
+BACKEND_GRPC_SOCKET = os.environ.get("BACKEND_GRPC_SOCKET")
+SSO_GRPC_SOCKET = os.environ.get("SSO_GRPC_SOCKET")
+APP_UUID = os.environ.get("APP_UUID")
+SERVICE_JWT = os.environ.get("SERVICE_JWT")
+
+async def run_llm_remote(request: llmproxy_pb2.LLMRequest):
     print("Will try to greet world ...")
-    with grpc.insecure_channel("localhost:50051") as channel:
+    async with grpc.aio.insecure_channel(BACKEND_GRPC_SOCKET) as channel:
         stub = llmproxy_pb2_grpc.LLMProxyStub(channel)
-        stub.SendRequest(llmproxy_pb2.LLMRequest(jwt='123', content='321'))
+        time.sleep(1)
+        try :
+            await check_permissions(request)
+            await stub.SendReply(llmproxy_pb2.LLMReply(jwt=SERVICE_JWT, response="hello"))
+        except PermissionError as error:
+            print(error)
+
+
+async def check_permissions(request: llmproxy_pb2.LLMRequest):
+    print(request)
+    async with grpc.aio.insecure_channel(SSO_GRPC_SOCKET) as channel:
+        try:
+            stub = sso_pb2_grpc.PermissionsStub(channel)
+            response = await stub.GetUserPermissions(sso_pb2.GetUserPermissionsRequest(jwt=request.jwt))
+            app = list(filter(lambda x: x.app_uuid == APP_UUID, response.apps))[0]
+            if len(list(filter(lambda x: x == 5, app.permissions))):
+                pass
+            else:
+                raise PermissionError('No permission found')
+        except AioRpcError as error:
+            raise PermissionError(error.details()) from error
+        except Exception as error:
+            raise PermissionError(error) from error
+
+
+class LLMProxyHandler(llmproxy_pb2_grpc.LLMProxyServicer):
+
+    async def SendRequest(
+        self,
+        request: llmproxy_pb2.LLMRequest,
+        _,
+    ) -> llmproxy_pb2.LLMReply:
+        loop = asyncio.get_event_loop()
+        loop.create_task(run_llm_remote(request))
+        return empty_pb2.Empty()
+
+
+async def serve() -> None:
+    server = grpc.aio.server()
+    llmproxy_pb2_grpc.add_LLMProxyServicer_to_server(LLMProxyHandler(), server)
+    listen_addr = PROXY_SOCKET
+    server.add_insecure_port(listen_addr)
+    logging.info("Starting server on %s", listen_addr)
+    await server.start()
+    await server.wait_for_termination()
 
 
 if __name__ == "__main__":
-    logging.basicConfig()
-    run()
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(serve())
 
 
+# INSERT INTO user_roles VALUES ('PT_SHARE', '2024-12-31 21:34:54.508775+00', '2024-12-31 21:34:54.508775+00', 'proxy', '7a9a567d-3756-4706-b1e7-d795e908c770');
