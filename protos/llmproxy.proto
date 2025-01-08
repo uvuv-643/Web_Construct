@@ -14,9 +14,11 @@ service LLMProxy {
 message LLMRequest {
   string jwt = 1;
   string content = 2;
+  string uuid = 3;
 }
 
 message LLMReply {
   string jwt = 1;
   string response = 2;
+  string uuid = 3;
 }

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func SendRequestToLLM(data string) {
+func SendRequestToLLM(data string) error {
 
 	cfg := config.New()
 	addr := cfg.ProxyURL
@@ -22,12 +22,12 @@ func SendRequestToLLM(data string) {
 	defer conn.Close()
 	c := llmproxy.NewLLMProxyClient(conn)
 
-	// Contact the server and print out its response.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	_, err = c.SendRequest(ctx, &llmproxy.LLMRequest{Jwt: cfg.ServiceJWT, Content: data})
 	if err != nil {
-		log.Fatalf("could not greet: %v", err)
+		return err
 	}
+	return nil
 
 }

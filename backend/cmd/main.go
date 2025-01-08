@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/go-pg/pg/v10"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	config "github.com/uvuv-643/Web_Construct/backend/conifg"
@@ -21,15 +22,18 @@ import (
 
 type server struct {
 	llmproxy.UnimplementedLLMProxyServer
+	orderRepo internal.OrderRepository
 }
 
 type HttpServer struct {
-	router *mux.Router
+	router    *mux.Router
+	orderRepo internal.OrderRepository
 }
 
-func NewServer() *HttpServer {
+func NewServer(orderRepo internal.OrderRepository) *HttpServer {
 	s := &HttpServer{
-		router: mux.NewRouter(),
+		router:    mux.NewRouter(),
+		orderRepo: orderRepo,
 	}
 	s.routes()
 	return s
@@ -65,13 +69,39 @@ func (s *HttpServer) validateJWT(next http.Handler) http.Handler {
 				return
 			}
 		}
+		r.Header.Add("userValidated", jwtToken)
 		next.ServeHTTP(w, r)
 	})
 }
 
 func (s *HttpServer) hello(w http.ResponseWriter, r *http.Request) {
-	internal.SendRequestToLLM("hello world!")
+	var input struct {
+		Request string `json:"request"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "`request` field is required", http.StatusBadRequest)
+		return
+	}
+	err := internal.SendRequestToLLM(input.Request)
+	if err != nil {
+		fmt.Println()
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	order, err := s.orderRepo.Create(context.Background(), r.Header.Get("userValidated"), input.Request)
+	if err != nil {
+		fmt.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
+	_, err = w.Write([]byte(order.ID.String()))
+	if err != nil {
+		fmt.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }
 
 func (s *HttpServer) createUser(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +177,7 @@ func (s *server) SendReply(_ context.Context, in *llmproxy.LLMReply) (*emptypb.E
 	}
 	fmt.Println(internal.ValidateAIProxyPermissions(permissions))
 	fmt.Println(in.Response)
+	s.orderRepo.Modify(in.Uuid)
 	return &emptypb.Empty{}, nil
 }
 
@@ -156,21 +187,21 @@ func init() {
 	}
 }
 
-func startGrpcServer() {
+func startGrpcServer(orderRepo internal.OrderRepository) {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", config.New().BackendGrpcPort))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 	s := grpc.NewServer()
-	llmproxy.RegisterLLMProxyServer(s, &server{})
+	llmproxy.RegisterLLMProxyServer(s, &server{orderRepo: orderRepo})
 	log.Printf("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
 }
 
-func startHttpServer() {
-	server := NewServer()
+func startHttpServer(orderRepo internal.OrderRepository) {
+	server := NewServer(orderRepo)
 	log.Printf("server listening at [::]:8080")
 	err := http.ListenAndServe(":8080", server)
 	if err != nil {
@@ -179,6 +210,14 @@ func startHttpServer() {
 }
 
 func main() {
-	go startGrpcServer()
-	startHttpServer()
+	db := internal.ConnectToDB()
+	defer func(db *pg.DB) {
+		err := db.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(db)
+	orderRepo := internal.NewOrderRepository(db)
+	go startGrpcServer(orderRepo)
+	startHttpServer(orderRepo)
 }

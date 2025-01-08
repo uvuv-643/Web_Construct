@@ -13,6 +13,8 @@ from grpc.aio import AioRpcError
 from protogen import llmproxy_pb2_grpc, llmproxy_pb2, sso_pb2, sso_pb2_grpc
 from google.protobuf import empty_pb2
 
+from proxy import ya_gpt
+
 load_dotenv()
 
 PROXY_SOCKET = os.environ.get("AIPROXY_GRPC_SOCKET")
@@ -25,10 +27,10 @@ async def run_llm_remote(request: llmproxy_pb2.LLMRequest):
     print("Will try to greet world ...")
     async with grpc.aio.insecure_channel(BACKEND_GRPC_SOCKET) as channel:
         stub = llmproxy_pb2_grpc.LLMProxyStub(channel)
-        time.sleep(1)
         try :
             await check_permissions(request)
-            await stub.SendReply(llmproxy_pb2.LLMReply(jwt=SERVICE_JWT, response="hello"))
+            code = ya_gpt(request.content)
+            await stub.SendReply(llmproxy_pb2.LLMReply(jwt=SERVICE_JWT, response=code))
         except PermissionError as error:
             print(error)
 

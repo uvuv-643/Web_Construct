@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import protogen.sso_pb2 as sso__pb2
+import sso_pb2 as sso__pb2
 
 GRPC_GENERATED_VERSION = '1.68.1'
 GRPC_VERSION = grpc.__version__
