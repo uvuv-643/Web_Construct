@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func SendRequestToLLM(data string) error {
+func SendRequestToLLM(data string, order *Order) error {
 
 	cfg := config.New()
 	addr := cfg.ProxyURL
@@ -24,7 +24,7 @@ func SendRequestToLLM(data string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err = c.SendRequest(ctx, &llmproxy.LLMRequest{Jwt: cfg.ServiceJWT, Content: data})
+	_, err = c.SendRequest(ctx, &llmproxy.LLMRequest{Jwt: cfg.ServiceJWT, Content: data, Uuid: order.ID.String()})
 	if err != nil {
 		return err
 	}

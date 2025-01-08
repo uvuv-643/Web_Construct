@@ -14,6 +14,7 @@ import (
 type OrderRepository interface {
 	Create(ctx context.Context, user string, request string) (*Order, error)
 	Modify(ctx context.Context, uuid uuid.UUID, content string) (*Order, error)
+	Delete(ctx context.Context, order *Order) error
 }
 
 type OrderRepositoryImpl struct {
@@ -42,12 +43,19 @@ func (r OrderRepositoryImpl) Create(ctx context.Context, user string, request st
 }
 
 func (r OrderRepositoryImpl) Modify(ctx context.Context, uuid uuid.UUID, content string) (*Order, error) {
-	//if _, err := r.db.ModelContext(ctx, order).Insert(); err != nil {
-	//	return nil, fmt.Errorf("database_error")
-	//}
-	//
-	//return order, nil
+	_, err := r.db.Model(&Order{}).Where("uuid = ?", uuid).Update("response", content)
+	if err != nil {
+		return nil, err
+	}
 	return nil, nil
+}
+
+func (r OrderRepositoryImpl) Delete(ctx context.Context, order *Order) error {
+	_, err := r.db.ModelContext(ctx, order).Delete()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func InitializeDatabase(db *pg.DB) {

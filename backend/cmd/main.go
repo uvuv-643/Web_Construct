@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-pg/pg/v10"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	config "github.com/uvuv-643/Web_Construct/backend/conifg"
@@ -83,21 +84,26 @@ func (s *HttpServer) hello(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "`request` field is required", http.StatusBadRequest)
 		return
 	}
-	err := internal.SendRequestToLLM(input.Request)
-	if err != nil {
-		fmt.Println()
-		w.WriteHeader(http.StatusServiceUnavailable)
-		return
-	}
+
 	order, err := s.orderRepo.Create(context.Background(), r.Header.Get("userValidated"), input.Request)
 	if err != nil {
 		fmt.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
+	err = internal.SendRequestToLLM(input.Request, order)
+	if err != nil {
+		s.orderRepo.delete(order)
+		fmt.Println()
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	_, err = w.Write([]byte(order.ID.String()))
 	if err != nil {
+		s.orderRepo.delete(order)
 		fmt.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -175,9 +181,19 @@ func (s *server) SendReply(_ context.Context, in *llmproxy.LLMReply) (*emptypb.E
 	if err != nil {
 		return &emptypb.Empty{}, status.Errorf(codes.Unauthenticated, "Invalid token")
 	}
-	fmt.Println(internal.ValidateAIProxyPermissions(permissions))
-	fmt.Println(in.Response)
-	s.orderRepo.Modify(in.Uuid)
+	if !internal.ValidateAIProxyPermissions(permissions) {
+		return &emptypb.Empty{}, status.Errorf(codes.PermissionDenied, "Have no PT_SHARE")
+	}
+	fmt.Println(in.Uuid)
+	id, err := uuid.Parse(in.Uuid)
+	if err != nil {
+		return &emptypb.Empty{}, status.Errorf(codes.Unknown, "Invalid uuid")
+	}
+	fmt.Println("Modify triggered")
+	_, err = s.orderRepo.Modify(context.Background(), id, in.Response)
+	if err != nil {
+		return &emptypb.Empty{}, status.Errorf(codes.Internal, "Invalid uuid")
+	}
 	return &emptypb.Empty{}, nil
 }
 
