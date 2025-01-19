@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/go-pg/pg/v10/orm"
 	"log"
@@ -12,13 +13,49 @@ import (
 )
 
 type OrderRepository interface {
+	GetAll(ctx context.Context, user string) ([]Order, error)
+	GetOne(ctx context.Context, uuid uuid.UUID, user string) (*Order, error)
 	Create(ctx context.Context, user string, request string) (*Order, error)
-	Modify(ctx context.Context, uuid uuid.UUID, content string) (*Order, error)
+	Modify(ctx context.Context, uuid uuid.UUID, content string) error
+	ModifyByUser(ctx context.Context, uuid uuid.UUID, content string) error
 	Delete(ctx context.Context, order *Order) error
 }
 
 type OrderRepositoryImpl struct {
 	db *pg.DB
+}
+
+func (r OrderRepositoryImpl) GetAll(ctx context.Context, user string) ([]Order, error) {
+	var orders []Order
+	fmt.Println(user)
+	err := r.db.ModelContext(ctx, &orders).
+		Where("user_jwt = ?", user).
+		Select()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all orders for user %s: %w", user, err)
+	}
+
+	return orders, nil
+}
+
+func (r OrderRepositoryImpl) GetOne(ctx context.Context, uuid uuid.UUID, user string) (*Order, error) {
+	order := new(Order)
+	err := r.db.ModelContext(ctx, order).
+		Where("id = ?", uuid).
+		Select()
+	if err != nil {
+		if errors.Is(err, pg.ErrNoRows) {
+			return nil, fmt.Errorf("order not found: %w", err)
+		}
+		return nil, fmt.Errorf("failed to get order: %w", err)
+	}
+
+	// Check ownership
+	if order.UserJwt != user {
+		return nil, fmt.Errorf("user not authorized to access this order: %s", user)
+	}
+
+	return order, nil
 }
 
 func NewOrderRepository(db *pg.DB) OrderRepository {
@@ -30,7 +67,7 @@ func (r OrderRepositoryImpl) Create(ctx context.Context, user string, request st
 	order := &Order{
 		ID:        uuid.New(),
 		Request:   request,
-		User:      user,
+		UserJwt:   user,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -42,12 +79,28 @@ func (r OrderRepositoryImpl) Create(ctx context.Context, user string, request st
 	return order, nil
 }
 
-func (r OrderRepositoryImpl) Modify(ctx context.Context, uuid uuid.UUID, content string) (*Order, error) {
-	_, err := r.db.Model(&Order{}).Where("uuid = ?", uuid).Update("response", content)
+func (r OrderRepositoryImpl) Modify(ctx context.Context, uuid uuid.UUID, content string) error {
+	_, err := r.db.Model(&Order{}).
+		Set("response = ?", content).
+		Where("id = ?", uuid).
+		Update()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return nil, nil
+	fmt.Println(uuid, content)
+	return nil
+}
+
+func (r OrderRepositoryImpl) ModifyByUser(ctx context.Context, uuid uuid.UUID, content string) error {
+	_, err := r.db.Model(&Order{}).
+		Set("modified_response = ?", content).
+		Where("id = ?", uuid).
+		Update()
+	if err != nil {
+		return err
+	}
+	fmt.Println(uuid, content)
+	return nil
 }
 
 func (r OrderRepositoryImpl) Delete(ctx context.Context, order *Order) error {

@@ -7,7 +7,7 @@ import (
 
 type Order struct {
 	ID               uuid.UUID  `pg:"type:uuid,default:uuid_generate_v4(),pk" json:"id"`
-	User             string     `json:"user"`
+	UserJwt          string     `json:"user_jwt"`
 	Request          string     `json:"request"`
 	Response         string     `json:"response"`
 	ModifiedResponse string     `json:"modified_response"`

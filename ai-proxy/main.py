@@ -30,7 +30,8 @@ async def run_llm_remote(request: llmproxy_pb2.LLMRequest):
         try :
             await check_permissions(request)
             code = ya_gpt(request.content)
-            await stub.SendReply(llmproxy_pb2.LLMReply(jwt=SERVICE_JWT, response=code))
+            print(request, request.uuid)
+            await stub.SendReply(llmproxy_pb2.LLMReply(jwt=SERVICE_JWT, response=code, uuid=request.uuid))
         except PermissionError as error:
             print(error)
 

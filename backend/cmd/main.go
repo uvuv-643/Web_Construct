@@ -47,7 +47,10 @@ func (s *HttpServer) routes() {
 
 	allRoutes := s.router.PathPrefix("/api").Subrouter()
 	allRoutes.Use(s.validateJWT)
-	allRoutes.HandleFunc("/hello", s.hello).Methods("POST")
+	allRoutes.HandleFunc("/order", s.getUserOrders).Methods("GET")
+	allRoutes.HandleFunc("/order/{id}", s.getOrder).Methods("GET")
+	allRoutes.HandleFunc("/order", s.createOrder).Methods("POST")
+	allRoutes.HandleFunc("/order/{id}", s.modifyOrder).Methods("PUT")
 
 }
 
@@ -75,17 +78,24 @@ func (s *HttpServer) validateJWT(next http.Handler) http.Handler {
 	})
 }
 
-func (s *HttpServer) hello(w http.ResponseWriter, r *http.Request) {
+func (s *HttpServer) createOrder(w http.ResponseWriter, r *http.Request) {
+
+	user := r.Header.Get("userValidated")
+	if user == "" {
+		http.Error(w, "Missing or invalid user header", http.StatusUnauthorized)
+		return
+	}
+
 	var input struct {
 		Request string `json:"request"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.Request == "" {
 		http.Error(w, "`request` field is required", http.StatusBadRequest)
 		return
 	}
 
-	order, err := s.orderRepo.Create(context.Background(), r.Header.Get("userValidated"), input.Request)
+	order, err := s.orderRepo.Create(context.Background(), user, input.Request)
 	if err != nil {
 		fmt.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -94,8 +104,11 @@ func (s *HttpServer) hello(w http.ResponseWriter, r *http.Request) {
 
 	err = internal.SendRequestToLLM(input.Request, order)
 	if err != nil {
-		s.orderRepo.delete(order)
-		fmt.Println()
+		err := s.orderRepo.Delete(context.Background(), order)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
@@ -103,10 +116,108 @@ func (s *HttpServer) hello(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, err = w.Write([]byte(order.ID.String()))
 	if err != nil {
-		s.orderRepo.delete(order)
+		err := s.orderRepo.Delete(context.Background(), order)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *HttpServer) modifyOrder(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Request string `json:"request"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.Request == "" {
+		http.Error(w, "`request` field is required", http.StatusBadRequest)
+		return
+	}
+
+	vars := mux.Vars(r)
+	orderID, err := uuid.Parse(vars["id"])
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, err := w.Write([]byte(err.Error()))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		return
+	}
+
+	err = s.orderRepo.ModifyByUser(context.Background(), orderID, input.Request)
+	if err != nil {
 		fmt.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *HttpServer) getUserOrders(w http.ResponseWriter, r *http.Request) {
+	user := r.Header.Get("userValidated")
+	if user == "" {
+		http.Error(w, "Missing or invalid user header", http.StatusUnauthorized)
+		return
+	}
+
+	orders, err := s.orderRepo.GetAll(context.Background(), user)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, err := w.Write([]byte(err.Error()))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(orders); err != nil {
+		fmt.Println("Error encoding orders to JSON:", err)
+		http.Error(w, "Failed to encode orders", http.StatusInternalServerError)
+	}
+
+}
+
+func (s *HttpServer) getOrder(w http.ResponseWriter, r *http.Request) {
+	user := r.Header.Get("userValidated")
+	if user == "" {
+		http.Error(w, "Missing or invalid user header", http.StatusUnauthorized)
+		return
+	}
+
+	vars := mux.Vars(r)
+	orderID, err := uuid.Parse(vars["id"])
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, err := w.Write([]byte(err.Error()))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		return
+	}
+
+	orders, err := s.orderRepo.GetOne(context.Background(), orderID, user)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, err := w.Write([]byte(err.Error()))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(orders); err != nil {
+		fmt.Println("Error encoding orders to JSON:", err)
+		http.Error(w, "Failed to encode orders", http.StatusInternalServerError)
 	}
 }
 
@@ -190,7 +301,7 @@ func (s *server) SendReply(_ context.Context, in *llmproxy.LLMReply) (*emptypb.E
 		return &emptypb.Empty{}, status.Errorf(codes.Unknown, "Invalid uuid")
 	}
 	fmt.Println("Modify triggered")
-	_, err = s.orderRepo.Modify(context.Background(), id, in.Response)
+	err = s.orderRepo.Modify(context.Background(), id, in.Response)
 	if err != nil {
 		return &emptypb.Empty{}, status.Errorf(codes.Internal, "Invalid uuid")
 	}
