@@ -3,6 +3,7 @@ from __future__ import print_function
 import logging
 import asyncio
 import os
+import subprocess
 import time
 
 import grpc
@@ -14,6 +15,9 @@ from protogen import llmproxy_pb2_grpc, llmproxy_pb2, sso_pb2, sso_pb2_grpc
 from google.protobuf import empty_pb2
 
 from proxy import ya_gpt
+
+import threading
+import time
 
 load_dotenv()
 
@@ -27,7 +31,7 @@ async def run_llm_remote(request: llmproxy_pb2.LLMRequest):
     print("Will try to greet world ...")
     async with grpc.aio.insecure_channel(BACKEND_GRPC_SOCKET) as channel:
         stub = llmproxy_pb2_grpc.LLMProxyStub(channel)
-        try :
+        try:
             await check_permissions(request)
             code = ya_gpt(request.content)
             print(request, request.uuid)
@@ -76,6 +80,14 @@ async def serve() -> None:
 
 
 if __name__ == "__main__":
+
+    def delayed_task():
+        subprocess.run("scripts/update_ya_token.bash")
+        time.sleep(300)
+
+    task_thread = threading.Thread(target=delayed_task)
+    task_thread.start()
+
     logging.basicConfig(level=logging.INFO)
     asyncio.run(serve())
 

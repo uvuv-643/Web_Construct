@@ -69,6 +69,7 @@ func (s *HttpServer) validateJWT(next http.Handler) http.Handler {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			} else {
+				fmt.Println(st)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
@@ -104,6 +105,7 @@ func (s *HttpServer) createOrder(w http.ResponseWriter, r *http.Request) {
 
 	err = internal.SendRequestToLLM(input.Request, order)
 	if err != nil {
+		fmt.Println(err)
 		err := s.orderRepo.Delete(context.Background(), order)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -204,7 +206,12 @@ func (s *HttpServer) getOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	orders, err := s.orderRepo.GetOne(context.Background(), orderID, user)
+
 	if err != nil {
+		if strings.Contains(err.Error(), "order not found") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		w.WriteHeader(http.StatusInternalServerError)
 		_, err := w.Write([]byte(err.Error()))
 		if err != nil {

@@ -6,16 +6,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-YA_TOKEN = os.environ.get("YA_TOKEN")
 FOLDER_ID = os.environ.get("FOLDER_ID")
 YA_GPT_URL = os.environ.get("YA_GPT_URL")
-
+YA_TOKEN = os.environ.get("YA_TOKEN")
 
 class YAGPTException(Exception):
     pass
 
 
 def get_response_from_ya_gpt(data: str) -> str:
+  global YA_TOKEN
+
+  load_dotenv()
+  YA_TOKEN = os.environ.get("YA_TOKEN")
+
   payload = {
     "modelUri": f"gpt://{FOLDER_ID}/yandexgpt-lite",
     "completionOptions": {

@@ -134,13 +134,3 @@ func InitializeDatabase(db *pg.DB) {
 	}
 	log.Println("Database schema initialized successfully.")
 }
-
-func ConnectToDB() *pg.DB {
-	db := pg.Connect(&pg.Options{
-		User:     "your_user",
-		Password: "your_password",
-		Database: "your_database",
-	})
-	InitializeDatabase(db)
-	return db
-}
