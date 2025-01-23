@@ -21,6 +21,20 @@ import (
 	"strings"
 )
 
+func corsHandler(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("Hello!")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		h.ServeHTTP(w, r)
+	}
+}
+
 type server struct {
 	llmproxy.UnimplementedLLMProxyServer
 	orderRepo internal.OrderRepository
@@ -42,15 +56,15 @@ func NewServer(orderRepo internal.OrderRepository) *HttpServer {
 
 func (s *HttpServer) routes() {
 	authRoutes := s.router.PathPrefix("/api/auth").Subrouter()
-	authRoutes.HandleFunc("/register", s.createUser).Methods("POST")
-	authRoutes.HandleFunc("/login", s.getUser).Methods("POST")
+	authRoutes.HandleFunc("/register", corsHandler(s.createUser)).Methods("POST", "OPTIONS")
+	authRoutes.HandleFunc("/login", corsHandler(s.getUser)).Methods("POST", "OPTIONS")
 
 	allRoutes := s.router.PathPrefix("/api").Subrouter()
 	allRoutes.Use(s.validateJWT)
-	allRoutes.HandleFunc("/order", s.getUserOrders).Methods("GET")
-	allRoutes.HandleFunc("/order/{id}", s.getOrder).Methods("GET")
-	allRoutes.HandleFunc("/order", s.createOrder).Methods("POST")
-	allRoutes.HandleFunc("/order/{id}", s.modifyOrder).Methods("PUT")
+	allRoutes.HandleFunc("/order", corsHandler(s.getUserOrders)).Methods("GET", "OPTIONS")
+	allRoutes.HandleFunc("/order/{id}", corsHandler(s.getOrder)).Methods("GET", "OPTIONS")
+	allRoutes.HandleFunc("/order", corsHandler(s.createOrder)).Methods("POST", "OPTIONS")
+	allRoutes.HandleFunc("/order/{id}", corsHandler(s.modifyOrder)).Methods("PUT", "OPTIONS")
 
 }
 
@@ -63,7 +77,7 @@ func (s *HttpServer) validateJWT(next http.Handler) http.Handler {
 		authHeader := r.Header.Get("Authorization")
 		jwtToken := strings.Trim(strings.Replace(authHeader, "Bearer", "", 1), " ")
 		_, err := internal.GetUserPermissions(jwtToken)
-		if err != nil {
+		if r.Method != "OPTIONS" && err != nil {
 			st, _ := status.FromError(err)
 			if st.Code() == codes.Unauthenticated {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -270,6 +284,8 @@ func (s *HttpServer) getUser(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
@@ -336,8 +352,8 @@ func startGrpcServer(orderRepo internal.OrderRepository) {
 
 func startHttpServer(orderRepo internal.OrderRepository) {
 	server := NewServer(orderRepo)
-	log.Printf("server listening at [::]:8080")
-	err := http.ListenAndServe(":8080", server)
+	log.Printf("server listening at [::]:8031")
+	err := http.ListenAndServe(":8031", server)
 	if err != nil {
 		return
 	}

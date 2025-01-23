@@ -1,0 +1,13 @@
+.card {
+    margin-bottom: 30px;
+}
+.card p {
+    margin-top: 5px;
+    margin-bottom: 10px;
+}
+
+.component-wrapper {
+    padding: 50px;
+}
+
+.card-buttons {display: flex; gap: 15px;}

@@ -81,9 +81,10 @@ async def serve() -> None:
 
 if __name__ == "__main__":
 
+    subprocess.run("scripts/update_ya_token.bash")
     def delayed_task():
         subprocess.run("scripts/update_ya_token.bash")
-        time.sleep(300)
+        time.sleep(60)
 
     task_thread = threading.Thread(target=delayed_task)
     task_thread.start()
